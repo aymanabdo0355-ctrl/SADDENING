@@ -60,21 +60,9 @@ pcall(function() _sharedNodes = require(RS:WaitForChild("Nodes")) end)
 pcall(function() _infoModule = require(RS:WaitForChild("Shared"):WaitForChild("Information")) end)
 
 local function doSummon(bannerId, batch)
-    local node = _sharedNodes and _sharedNodes.BANNER_SUMMON
-    if not node then return false end
-    -- Add node to existing upvalue of Summon function
-    if _actions and _actions.Summon then
-        pcall(function()
-            local upTbl = debug.getupvalue(_actions.Summon, 1)
-            if type(upTbl) == "table" then
-                upTbl.BANNER_SUMMON = node
-            end
-        end)
-        return pcall(_actions.Summon, bannerId, batch or 10)
-    end
-    -- Fallback: fire node directly
+    if not _actions or not _actions.Summon then return false end
     task.spawn(function()
-        pcall(function() node:FireServer(bannerId, batch or 10) end)
+        pcall(_actions.Summon, bannerId, batch or 10)
     end)
     task.wait(0.3)
     return true
@@ -82,17 +70,10 @@ end
 
 local function doRerollTrait(uid)
     if not _actions or not _actions.RerollTrait then return false end
-    -- Add node to existing upvalue (don't replace the whole table)
-    pcall(function()
-        local node = _sharedNodes.ROLL_UNIT_TRAIT
-        if node then
-            local upTbl = debug.getupvalue(_actions.RerollTrait, 1)
-            if type(upTbl) == "table" then
-                upTbl.ROLL_UNIT_TRAIT = node
-            end
-        end
+    task.spawn(function()
+        pcall(_actions.RerollTrait, uid, true)
     end)
-    return pcall(_actions.RerollTrait, uid, true)
+    return true
 end
 
 local function getUnitData()
