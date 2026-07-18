@@ -61,33 +61,38 @@ pcall(function() _infoModule = require(RS:WaitForChild("Shared"):WaitForChild("I
 
 local function doSummon(bannerId, batch)
     local node = _sharedNodes and _sharedNodes.BANNER_SUMMON
-    if not node then
-        -- Re-require nodes in case it wasn't ready at boot
-        pcall(function() _sharedNodes = require(RS:WaitForChild("Nodes")) end)
-        node = _sharedNodes and _sharedNodes.BANNER_SUMMON
+    if not node then return false end
+    -- Add node to existing upvalue of Summon function
+    if _actions and _actions.Summon then
+        pcall(function()
+            local upTbl = debug.getupvalue(_actions.Summon, 1)
+            if type(upTbl) == "table" then
+                upTbl.BANNER_SUMMON = node
+            end
+        end)
+        return pcall(_actions.Summon, bannerId, batch or 10)
     end
-    if not node then notify("BANNER_SUMMON node missing", 3); return false end
-    local ok, err
+    -- Fallback: fire node directly
     task.spawn(function()
-        ok, err = pcall(function() node:FireServer(bannerId, batch or 10) end)
+        pcall(function() node:FireServer(bannerId, batch or 10) end)
     end)
-    task.wait(0.3) -- wait for the request to process
+    task.wait(0.3)
     return true
 end
 
 local function doRerollTrait(uid)
-    local node = _sharedNodes and _sharedNodes.ROLL_UNIT_TRAIT
-    if not node then
-        pcall(function() _sharedNodes = require(RS:WaitForChild("Nodes")) end)
-        node = _sharedNodes and _sharedNodes.ROLL_UNIT_TRAIT
-    end
-    if not node then notify("ROLL_UNIT_TRAIT node missing", 3); return false end
-    local ok
-    task.spawn(function()
-        ok = pcall(function() node:FireServer(uid, true) end)
+    if not _actions or not _actions.RerollTrait then return false end
+    -- Add node to existing upvalue (don't replace the whole table)
+    pcall(function()
+        local node = _sharedNodes.ROLL_UNIT_TRAIT
+        if node then
+            local upTbl = debug.getupvalue(_actions.RerollTrait, 1)
+            if type(upTbl) == "table" then
+                upTbl.ROLL_UNIT_TRAIT = node
+            end
+        end
     end)
-    task.wait()
-    return true
+    return pcall(_actions.RerollTrait, uid, true)
 end
 
 local function getUnitData()
@@ -139,9 +144,15 @@ do
     local dupes = {}
     for uid, unit in pairs(getUnitData()) do
         if type(unit) == "table" and unit.Asset then
-            local label = unit.Asset
-            dupes[label] = (dupes[label] or 0) + 1
-            if dupes[label] > 1 then label = label .. " #" .. dupes[label] end
+            local rarity = ""
+            if _infoModule and _infoModule.Units and _infoModule.Units[unit.Asset] then
+                rarity = _infoModule.Units[unit.Asset].Rarity or ""
+            end
+            local trait = unit.Trait or "no trait"
+            local base = unit.Asset
+            dupes[base] = (dupes[base] or 0) + 1
+            if dupes[base] > 1 then base = base .. " #" .. dupes[base] end
+            local label = base .. " [" .. rarity .. "] " .. trait
             _ownedUnits[#_ownedUnits + 1] = label
             _ownedIdMap[label] = uid
         end
@@ -237,15 +248,18 @@ local function runTraitRollback(uid, targetTraits)
         end
 
         doRerollTrait(uid)
-        task.wait(0.5)
-        local unit = getUnitData()[uid]
-        if unit and unit.Trait and targetTraits[unit.Trait] then
+        task.wait(0.1)
+        -- Re-read fresh from PlayerData (live ref)
+        local ud = getUnitData()
+        local unit = ud[uid]
+        local gotTrait = unit and unit.Trait
+        if gotTrait and targetTraits[gotTrait] then
             prog.inProgress = false; saveProgress(prog)
-            LP:Kick("GOT " .. unit.Trait .. " after " .. i .. " rolls!")
+            LP:Kick("GOT " .. gotTrait .. " after " .. i .. " rolls!")
             return
         end
         if i % 20 == 0 then
-            notify("Rerolled " .. i .. "x (got: " .. (unit and unit.Trait or "?") .. ")", 2)
+            notify("Rerolled " .. i .. "x (got: " .. (gotTrait or "none") .. ")", 2)
         end
     end
 end
