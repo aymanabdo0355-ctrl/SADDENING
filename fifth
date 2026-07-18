@@ -380,7 +380,8 @@ task.defer(function()
     if not _pd or not _pd.Data or not _pd.Data.ItemData then return end
 
     if not prog.inProgress then return end
-    -- Wait for PlayerData to load before resuming
+    -- Wait for full game load — character exists and PlayerData has items
+    while not (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")) do task.wait(1) end
     while not (_pd and _pd.Data and _pd.Data.ItemData and next(_pd.Data.ItemData)) do
         for _, obj in ipairs(getgc(true)) do
             if type(obj) == "table" and rawget(obj, "Token") == "PlayerData" and rawget(obj, "Data") and rawget(obj, "Data").ItemData then
@@ -389,6 +390,7 @@ task.defer(function()
         end
         task.wait(1)
     end
+    task.wait(3)
     if prog.mode == "summon" and prog.bannerId and prog.targetUnits and next(prog.targetUnits) then
         notify("Resuming rollback summon...", 3)
         task.wait(2)
