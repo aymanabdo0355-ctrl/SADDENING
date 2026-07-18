@@ -194,8 +194,8 @@ local function runSummonRollback(bannerId, targetUnits, batchSize)
             end
         end
 
-        if total >= 2000 then
-            notify("2000 summons — no target, rolling back", 4)
+        if total >= 1000 then
+            notify("1000 summons — no target, rolling back", 4)
             prog = {inProgress = true, mode = "summon", bannerId = bannerId, targetUnits = targetUnits, batchSize = batchSize}
             saveProgress(prog)
             task.wait(0.5); rollback(); return
