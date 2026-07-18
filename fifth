@@ -1,5 +1,5 @@
 repeat task.wait() until game:IsLoaded()
-task.wait()
+task.wait(2)
 
 local RS   = game:GetService("ReplicatedStorage")
 local TP   = game:GetService("TeleportService")
@@ -11,69 +11,120 @@ local function notify(msg, dur)
     pcall(function() SGui:SetCore("SendNotification", {Title = "Zero Hub", Text = msg, Duration = dur or 3}) end)
 end
 
--- ── Single GC scan — grabs PlayerData, Actions, BannerData in one pass ──
-local _pd, _actions
-local _bannerNames, _bannerIdByName, _bannerCost, _bannerCurrency = {}, {}, {}, {}
+-- ── Wait for each dependency with retries ──
+local _pd, _actions, _nodes, _info
 
-local function scanPD()
+local function gcFind(check)
     for _, obj in ipairs(getgc(true)) do
-        if type(obj) == "table" and rawget(obj, "Token") == "PlayerData" and rawget(obj, "Data") and rawget(obj, "Data").ItemData then
-            _pd = obj; return true
-        end
+        if type(obj) == "table" and check(obj) then return obj end
     end
-    return false
+    return nil
 end
 
-for _, obj in ipairs(getgc(true)) do
-    if type(obj) == "table" then
-        if not _pd and rawget(obj, "Token") == "PlayerData" and rawget(obj, "Data") and rawget(obj, "Data").ItemData then
-            _pd = obj
-        end
-        if not _actions and type(rawget(obj, "Summon")) == "function" and type(rawget(obj, "RerollTrait")) == "function" then
-            _actions = obj
-        end
-        if rawget(obj, "Token") == "BannerData" and rawget(obj, "Data") then
+-- PlayerData
+for _ = 1, 60 do
+    _pd = gcFind(function(t) return rawget(t, "Token") == "PlayerData" and rawget(t, "Data") and rawget(t, "Data").ItemData end)
+    if _pd then break end
+    task.wait(1)
+end
+if not _pd then notify("Failed to find PlayerData", 5); return end
+
+-- Actions
+for _ = 1, 30 do
+    _actions = gcFind(function(t) return type(rawget(t, "Summon")) == "function" and type(rawget(t, "RerollTrait")) == "function" end)
+    if _actions then break end
+    task.wait(1)
+end
+
+pcall(function() _nodes = require(RS:WaitForChild("Nodes", 10)) end)
+pcall(function() _info = require(RS:WaitForChild("Shared", 10):WaitForChild("Information", 10)) end)
+
+-- ── Banners — retry until found ──
+local _banners = {} -- {label, id, cost, currency}
+
+for attempt = 1, 30 do
+    for _, obj in ipairs(getgc(true)) do
+        if type(obj) == "table" and rawget(obj, "Token") == "BannerData" and rawget(obj, "Data") then
             local d = obj.Data
             if d.BannerID and d.BannerInfo then
                 local name = d.BannerInfo.Styling and d.BannerInfo.Styling.Name or d.BannerID
                 local cost = d.BannerInfo.Cost or 0
                 local cur  = d.BannerInfo.Currency or "Gem"
-                local label = name .. " (" .. cur .. " x" .. cost .. ")"
-                _bannerNames[#_bannerNames + 1] = label
-                _bannerIdByName[label] = d.BannerID
-                _bannerCost[d.BannerID] = cost
-                _bannerCurrency[d.BannerID] = cur
+                local exists = false
+                for _, b in ipairs(_banners) do if b.id == d.BannerID then exists = true; break end end
+                if not exists then
+                    _banners[#_banners + 1] = {
+                        label = name .. " (" .. cur .. " x" .. cost .. ")",
+                        id = d.BannerID, cost = cost, currency = cur
+                    }
+                end
             end
         end
     end
+    if #_banners > 0 then break end
+    task.wait(1)
 end
 
-if not _pd then repeat task.wait() until scanPD() end
+table.sort(_banners, function(a, b) return a.label < b.label end)
+local bannerLabels = {}
+for _, b in ipairs(_banners) do bannerLabels[#bannerLabels + 1] = b.label end
+if #bannerLabels == 0 then bannerLabels = {"No banners — loading?"} end
 
-table.sort(_bannerNames)
-if #_bannerNames == 0 then _bannerNames = {"No banners"} end
+local function bannerById(label)
+    for _, b in ipairs(_banners) do if b.label == label then return b end end
+    return nil
+end
 
-local _nodes = nil
-pcall(function() _nodes = require(RS:WaitForChild("Nodes", 5)) end)
-local _info = nil
-pcall(function() _info = require(RS:WaitForChild("Shared", 5):WaitForChild("Information", 5)) end)
+-- ── Unit lists ──
+local allUnits = {}
+if _info and _info.Units then
+    for k in pairs(_info.Units) do
+        if not k:match("EVO$") and not k:match("Spirit$") and not k:match("Wolf$") then
+            allUnits[#allUnits + 1] = k
+        end
+    end
+end
+table.sort(allUnits)
 
--- ── Progress persistence ──
-local PROG_PATH = "ZeroHub/AnimeExpeditions/rollback_progress.json"
+local ownedUnits, ownedIdMap = {}, {}
+do
+    local dupes = {}
+    local ud = _pd and _pd.Data and _pd.Data.UnitData or {}
+    for uid, unit in pairs(ud) do
+        if type(unit) == "table" and unit.Asset then
+            local rarity = (_info and _info.Units and _info.Units[unit.Asset] and _info.Units[unit.Asset].Rarity) or ""
+            local base = unit.Asset
+            dupes[base] = (dupes[base] or 0) + 1
+            if dupes[base] > 1 then base = base .. " #" .. dupes[base] end
+            local label = base .. " [" .. rarity .. "] " .. (unit.Trait or "none")
+            ownedUnits[#ownedUnits + 1] = label
+            ownedIdMap[label] = uid
+        end
+    end
+    table.sort(ownedUnits)
+end
+
+local traitNames = {
+    "Primordial","Forsaken","Unbound","Draconic","Limit Breaker","Investor",
+    "Bolt","Optics","Precision 1","Precision 2","Enlightenment",
+    "Range 1","Range 2","Speed 1","Speed 2","Strength 1","Strength 2"
+}
+
+-- ── Progress ──
+local PROG = "ZeroHub/AnimeExpeditions/rollback_progress.json"
 pcall(function()
     if not isfolder("ZeroHub") then makefolder("ZeroHub") end
     if not isfolder("ZeroHub/AnimeExpeditions") then makefolder("ZeroHub/AnimeExpeditions") end
 end)
-
-local function loadProgress()
-    if not isfile(PROG_PATH) then return {} end
-    local ok, d = pcall(HS.JSONDecode, HS, readfile(PROG_PATH))
+local function loadProg()
+    if not isfile(PROG) then return {} end
+    local ok, d = pcall(HS.JSONDecode, HS, readfile(PROG))
     return ok and d or {}
 end
-local function saveProgress(t) pcall(function() writefile(PROG_PATH, HS:JSONEncode(t)) end) end
-local prog = loadProgress()
+local function saveProg(t) pcall(function() writefile(PROG, HS:JSONEncode(t)) end) end
+local prog = loadProg()
 
--- ── Helpers ──
+-- ── Core ──
 local function rollback()
     pcall(function()
         RS.Nodes.Network.NetworkEvents._updateNode:FireServer(
@@ -84,23 +135,31 @@ local function rollback()
     TP:Teleport(game.PlaceId, LP)
 end
 
-local function freshPD()
-    scanPD()
-    return _pd
+local function doSummon(bannerId, batch)
+    if not _actions or not _actions.Summon then return false end
+    local fn = _actions.Summon
+    local orig = debug.getupvalue(fn, 1)
+    if _nodes and _nodes.BANNER_SUMMON then debug.setupvalue(fn, 1, {BANNER_SUMMON = _nodes.BANNER_SUMMON}) end
+    local ok = pcall(fn, bannerId, batch or 10)
+    if orig then debug.setupvalue(fn, 1, orig) end
+    return ok
 end
 
-local function getUnitData()
-    if _pd and _pd.Data and _pd.Data.UnitData then return _pd.Data.UnitData end
-    scanPD()
+local function doReroll(uid)
+    if not _actions or not _actions.RerollTrait then return false end
+    local fn = _actions.RerollTrait
+    local orig = debug.getupvalue(fn, 1)
+    if _nodes and _nodes.ROLL_UNIT_TRAIT then debug.setupvalue(fn, 1, {ROLL_UNIT_TRAIT = _nodes.ROLL_UNIT_TRAIT}) end
+    local ok = pcall(fn, uid, true)
+    if orig then debug.setupvalue(fn, 1, orig) end
+    return ok
+end
+
+local function getUD()
     return _pd and _pd.Data and _pd.Data.UnitData or {}
 end
 
-local function getCurrency(name)
-    if _pd and _pd.Data and _pd.Data.ItemData then
-        local v = _pd.Data.ItemData[name]
-        if v then return type(v) == "table" and v.Amount or v end
-    end
-    scanPD()
+local function getBal(name)
     if _pd and _pd.Data and _pd.Data.ItemData then
         local v = _pd.Data.ItemData[name]
         if v then return type(v) == "table" and v.Amount or v end
@@ -108,98 +167,48 @@ local function getCurrency(name)
     return 0
 end
 
-local function doSummon(bannerId, batch)
-    if not _actions or not _actions.Summon then return false end
-    local fn = _actions.Summon
-    local origUp = debug.getupvalue(fn, 1)
-    local node = _nodes and _nodes.BANNER_SUMMON
-    if node then debug.setupvalue(fn, 1, {BANNER_SUMMON = node}) end
-    local ok = pcall(fn, bannerId, batch or 10)
-    if origUp then debug.setupvalue(fn, 1, origUp) end
-    return ok
-end
-
-local function doRerollTrait(uid)
-    if not _actions or not _actions.RerollTrait then return false end
-    local fn = _actions.RerollTrait
-    local origUp = debug.getupvalue(fn, 1)
-    local node = _nodes and _nodes.ROLL_UNIT_TRAIT
-    if node then debug.setupvalue(fn, 1, {ROLL_UNIT_TRAIT = node}) end
-    local ok = pcall(fn, uid, true)
-    if origUp then debug.setupvalue(fn, 1, origUp) end
-    return ok
-end
-
--- ── Unit & trait lists ──
-local _allUnitNames = {}
-if _info and _info.Units then
-    for k in pairs(_info.Units) do
-        if not k:match("EVO$") and not k:match("Spirit$") and not k:match("Wolf$") then
-            _allUnitNames[#_allUnitNames + 1] = k
-        end
+local function getTrait(uid)
+    if _pd and _pd.Data and _pd.Data.UnitData then
+        local u = _pd.Data.UnitData[uid]
+        if u then return u.Trait end
     end
-end
-table.sort(_allUnitNames)
-
-local _ownedUnits, _ownedIdMap = {}, {}
-do
-    local dupes = {}
-    for uid, unit in pairs(getUnitData()) do
-        if type(unit) == "table" and unit.Asset then
-            local rarity = ""
-            if _info and _info.Units and _info.Units[unit.Asset] then
-                rarity = _info.Units[unit.Asset].Rarity or ""
-            end
-            local trait = unit.Trait or "no trait"
-            local base = unit.Asset
-            dupes[base] = (dupes[base] or 0) + 1
-            if dupes[base] > 1 then base = base .. " #" .. dupes[base] end
-            local label = base .. " [" .. rarity .. "] " .. trait
-            _ownedUnits[#_ownedUnits + 1] = label
-            _ownedIdMap[label] = uid
-        end
-    end
-    table.sort(_ownedUnits)
+    return nil
 end
 
-local _traitNames = {
-    "Primordial","Forsaken","Unbound","Draconic","Limit Breaker","Investor",
-    "Bolt","Optics","Precision 1","Precision 2","Enlightenment",
-    "Range 1","Range 2","Speed 1","Speed 2","Strength 1","Strength 2"
-}
-
--- ── Core loops ──
-local function runSummonRollback(bannerId, targetUnits, batchSize)
-    if not bannerId or not targetUnits or not next(targetUnits) then
-        notify("Pick a banner and target units"); return
-    end
-    local cost = _bannerCost[bannerId] or 50
-    local currency = _bannerCurrency[bannerId] or "Gem"
-    local total = 0
-    local before = {}
-    for uid in pairs(getUnitData()) do before[uid] = true end
+-- ── Summon loop ──
+local function runSummon(bannerId, targets, batchSize, bannerCost, bannerCur)
+    if not bannerId or not targets or not next(targets) then notify("Pick banner + targets"); return end
+    local total, before = 0, {}
+    for uid in pairs(getUD()) do before[uid] = true end
 
     while true do
-        local bal = getCurrency(currency)
-        local batch = math.min(batchSize, math.floor(bal / (cost > 0 and cost or 1)))
+        -- Pre-check for late arrivals
+        for uid, unit in pairs(getUD()) do
+            if not before[uid] and type(unit) == "table" and unit.Asset and targets[unit.Asset] then
+                prog.inProgress = false; saveProg(prog)
+                LP:Kick("GOT " .. unit.Asset .. " after " .. total .. " summons!")
+                return
+            end
+        end
+
+        local batch = math.min(batchSize, math.floor(getBal(bannerCur) / math.max(bannerCost, 1)))
         if batch < 1 then
-            notify("Out of " .. currency .. " after " .. total .. " summons", 4)
-            prog = {inProgress = true, mode = "summon", bannerId = bannerId, targetUnits = targetUnits, batchSize = batchSize}
-            saveProgress(prog)
-            task.wait(1); rollback(); return
+            notify("Out of " .. bannerCur .. " — " .. total .. " summons", 4)
+            prog = {inProgress = true, mode = "summon", bannerId = bannerId, targets = targets, batchSize = batchSize, cost = bannerCost, currency = bannerCur}
+            saveProg(prog); task.wait(1); rollback(); return
         end
 
         doSummon(bannerId, batch)
         total = total + batch
         task.wait(0.3)
 
-        local newNames = {}
-        for uid, unit in pairs(getUnitData()) do
+        local got = {}
+        for uid, unit in pairs(getUD()) do
             if not before[uid] and type(unit) == "table" then
-                newNames[#newNames + 1] = unit.Asset or "?"
+                got[#got + 1] = unit.Asset or "?"
                 before[uid] = true
-                if targetUnits[unit.Asset] then
-                    prog.inProgress = false; saveProgress(prog)
+                if unit.Asset and targets[unit.Asset] then
+                    prog.inProgress = false; saveProg(prog)
                     LP:Kick("GOT " .. unit.Asset .. " after " .. total .. " summons!")
                     return
                 end
@@ -207,149 +216,112 @@ local function runSummonRollback(bannerId, targetUnits, batchSize)
         end
 
         if total >= 1000 then
-            notify("1000 summons, no target — rolling back", 4)
-            prog = {inProgress = true, mode = "summon", bannerId = bannerId, targetUnits = targetUnits, batchSize = batchSize}
-            saveProgress(prog)
-            task.wait(0.5); rollback(); return
+            notify("1000 summons — rolling back", 4)
+            prog = {inProgress = true, mode = "summon", bannerId = bannerId, targets = targets, batchSize = batchSize, cost = bannerCost, currency = bannerCur}
+            saveProg(prog); task.wait(0.5); rollback(); return
         end
-        if total % 50 == 0 or #newNames > 0 then
-            notify("Summoned " .. total .. (#newNames > 0 and ("\nGot: " .. table.concat(newNames, ", ")) or ""), 4)
+        if total % 50 == 0 or #got > 0 then
+            notify("Summoned " .. total .. (#got > 0 and ("\nGot: " .. table.concat(got, ", ")) or ""), 3)
         end
         task.wait()
     end
 end
 
-local function readTrait(uid)
-    -- Fast path: direct read off cached _pd
-    if _pd and _pd.Data and _pd.Data.UnitData then
-        local unit = _pd.Data.UnitData[uid]
-        if unit and unit.Trait then return unit.Trait end
-    end
-    -- Stale reference — one targeted re-scan
-    scanPD()
-    if _pd and _pd.Data and _pd.Data.UnitData then
-        local unit = _pd.Data.UnitData[uid]
-        if unit then return unit.Trait end
-    end
-    return nil
-end
+-- ── Trait loop ──
+local function runTrait(uid, targets)
+    if not uid or not targets or not next(targets) then notify("Pick unit + traits"); return end
+    local lastTrait, stale = getTrait(uid), 0
 
-local function readRerollCount()
-    if _pd and _pd.Data and _pd.Data.ItemData then
-        local v = _pd.Data.ItemData.TraitReroll
-        if v then return type(v) == "table" and v.Amount or v end
-    end
-    return 0
-end
-
-local function runTraitRollback(uid, targetTraits)
-    if not uid or not targetTraits or not next(targetTraits) then
-        notify("Pick a unit and target traits"); return
-    end
-    for i = 1, 200 do
-        if i % 10 == 1 and readRerollCount() < 1 then
-            notify("Out of trait rerolls after " .. (i - 1) .. " rolls", 4)
-            prog = {inProgress = true, mode = "trait", traitUid = uid, traitTargets = targetTraits}
-            saveProgress(prog)
-            task.wait(0.5); rollback(); return
-        end
-
-        doRerollTrait(uid)
-        task.wait(0.15)
-
-        local gotTrait = readTrait(uid)
-        if gotTrait and targetTraits[gotTrait] then
-            prog.inProgress = false; saveProgress(prog)
-            LP:Kick("GOT " .. gotTrait .. " after " .. i .. " rolls!")
+    for i = 1, 500 do
+        local pre = getTrait(uid)
+        if pre and targets[pre] then
+            prog.inProgress = false; saveProg(prog)
+            LP:Kick("GOT " .. pre .. " at roll " .. i .. "!")
             return
         end
-        if i % 50 == 0 then
-            notify("Rerolled " .. i .. "x (got: " .. (gotTrait or "none") .. ")", 2)
+
+        doReroll(uid)
+        task.wait(0.15)
+
+        local got = getTrait(uid)
+        if got and targets[got] then
+            prog.inProgress = false; saveProg(prog)
+            LP:Kick("GOT " .. got .. " after " .. i .. " rolls!")
+            return
         end
+
+        if got == lastTrait then stale = stale + 1 else stale = 0; lastTrait = got end
+        if stale >= 12 then
+            notify("Trait stuck — rolling back", 4)
+            prog = {inProgress = true, mode = "trait", uid = uid, targets = targets}
+            saveProg(prog); task.wait(0.5); rollback(); return
+        end
+        if i % 50 == 0 then notify("Rerolled " .. i .. "x (got: " .. (got or "none") .. ")", 2) end
     end
 
-    notify("200 rerolls — rolling back", 4)
-    prog = {inProgress = true, mode = "trait", traitUid = uid, traitTargets = targetTraits}
-    saveProgress(prog)
-    task.wait(0.5); rollback()
+    notify("500 rerolls — rolling back", 4)
+    prog = {inProgress = true, mode = "trait", uid = uid, targets = targets}
+    saveProg(prog); task.wait(0.5); rollback()
 end
 
--- ── EthosSuite UI ──
+-- ── UI ──
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/toeerolo-z/ethossuiterewrite/refs/heads/main/ethossuite.lua"))()
+local Window = Library:CreateWindow({ Title = "Zero Hub - Rollback", Version = "v2.0" })
 
-local Window = Library:CreateWindow({
-    Title = "Zero Hub - Rollback",
-    Version = "v1.4",
-})
-
--- SUMMON
 do
-    local Tab = Window:AddCategory("SUMMON"):AddTab("Summon")
-    local Box = Tab:AddGroupbox("Rollback Summon")
-
-    getgenv()._ZH_RB_bannerId = nil
-    getgenv()._ZH_RB_targets = {}
-    getgenv()._ZH_RB_batch = 10
+    local Box = Window:AddCategory("SUMMON"):AddTab("Summon"):AddGroupbox("Summon")
+    local sel = {}
 
     Box:AddDropdown("RBBanner", {
-        Text = "Banner", Values = _bannerNames, Default = _bannerNames[1], Multi = false,
-        Callback = function(v) getgenv()._ZH_RB_bannerId = _bannerIdByName[v] end,
+        Text = "Banner", Values = bannerLabels, Default = bannerLabels[1], Multi = false,
+        Callback = function(v) sel.banner = bannerById(v) end,
     })
     Box:AddDropdown("RBTargets", {
-        Text = "I Want", Values = _allUnitNames, Default = {}, Multi = true,
-        Callback = function(v) getgenv()._ZH_RB_targets = v end,
+        Text = "I Want", Values = allUnits, Default = {}, Multi = true,
+        Callback = function(v) sel.targets = v end,
     })
     Box:AddDropdown("RBBatch", {
-        Text = "Summon Amount", Values = {"1","10","50"}, Default = "10", Multi = false,
-        Callback = function(v) getgenv()._ZH_RB_batch = tonumber(v) or 10 end,
+        Text = "Amount", Values = {"1","10","50"}, Default = "10", Multi = false,
+        Callback = function(v) sel.batch = tonumber(v) or 10 end,
     })
-    Box:AddToggle("RBSummonStart", {
+    Box:AddToggle("RBStart", {
         Text = "Start", Default = false,
         Callback = function(p)
             if not p then return end
             task.spawn(function()
                 task.wait(1)
-                runSummonRollback(getgenv()._ZH_RB_bannerId, getgenv()._ZH_RB_targets, getgenv()._ZH_RB_batch)
+                local b = sel.banner
+                if not b then notify("Pick a banner"); return end
+                runSummon(b.id, sel.targets, sel.batch or 10, b.cost, b.currency)
             end)
         end,
     })
     Box:AddButton({ Text = "Rollback Now", Func = rollback })
 end
 
--- TRAIT
 do
-    local Tab = Window:AddCategory("TRAIT"):AddTab("Trait")
-    local Box = Tab:AddGroupbox("Rollback Trait Reroll")
+    local Box = Window:AddCategory("TRAIT"):AddTab("Trait"):AddGroupbox("Trait")
+    local sel = {}
 
-    getgenv()._ZH_RB_traitUid = nil
-    getgenv()._ZH_RB_traitTargets = {}
-
-    Box:AddDropdown("RBTraitUnit", {
-        Text = "Unit", Values = _ownedUnits, Default = _ownedUnits[1] or "--", Multi = false,
-        Callback = function(v) getgenv()._ZH_RB_traitUid = _ownedIdMap[v] end,
+    Box:AddDropdown("RBUnit", {
+        Text = "Unit", Values = ownedUnits, Default = ownedUnits[1] or "--", Multi = false,
+        Callback = function(v) sel.uid = ownedIdMap[v] end,
     })
-    Box:AddDropdown("RBTraitTargets", {
-        Text = "I Want", Values = _traitNames, Default = {}, Multi = true,
-        Callback = function(v) getgenv()._ZH_RB_traitTargets = v end,
+    Box:AddDropdown("RBTraits", {
+        Text = "I Want", Values = traitNames, Default = {}, Multi = true,
+        Callback = function(v) sel.targets = v end,
     })
-    Box:AddToggle("RBTraitStart", {
+    Box:AddToggle("RBTraitGo", {
         Text = "Start", Default = false,
         Callback = function(p)
             if not p then return end
-            task.spawn(function()
-                task.wait(1)
-                runTraitRollback(getgenv()._ZH_RB_traitUid, getgenv()._ZH_RB_traitTargets)
-            end)
+            task.spawn(function() task.wait(1); runTrait(sel.uid, sel.targets) end)
         end,
     })
     Box:AddButton({ Text = "Rollback Now", Func = rollback })
-    Box:AddButton({
-        Text = "Stop Loop",
-        Func = function()
-            prog.inProgress = false; prog.mode = nil; saveProgress(prog)
-            notify("Loop stopped", 3)
-        end,
-    })
+    Box:AddButton({ Text = "Stop", Func = function()
+        prog.inProgress = false; prog.mode = nil; saveProg(prog); notify("Stopped", 3)
+    end })
 end
 
 Library:CreateSettingsTab(Window)
@@ -357,49 +329,30 @@ Library:CreateSettingsTab(Window)
 -- ── Auto-resume ──
 task.defer(function()
     if not prog.inProgress then return end
-
-    -- Wait for character + full game state
     while not (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")) do task.wait(1) end
     task.wait(2)
 
-    -- Re-acquire everything — old refs are dead after teleport
-    for attempt = 1, 30 do
-        scanPD()
-        if not _actions then
-            for _, obj in ipairs(getgc(true)) do
-                if type(obj) == "table" and type(rawget(obj, "Summon")) == "function" and type(rawget(obj, "RerollTrait")) == "function" then
-                    _actions = obj; break
-                end
-            end
-        end
-        pcall(function() _nodes = require(RS:WaitForChild("Nodes", 5)) end)
-        if _pd and _actions and _nodes then break end
-        task.wait(1)
-    end
-
-    if not _pd or not _actions then
-        notify("Resume failed — couldn't find game data", 4)
-        prog.inProgress = false; saveProgress(prog)
-        return
-    end
-
-    -- Wait for ItemData to actually populate
+    -- Re-acquire after teleport
     for _ = 1, 30 do
-        if _pd.Data and _pd.Data.ItemData and next(_pd.Data.ItemData) then break end
-        scanPD()
+        _pd = gcFind(function(t) return rawget(t, "Token") == "PlayerData" and rawget(t, "Data") and rawget(t, "Data").ItemData end)
+        _actions = _actions or gcFind(function(t) return type(rawget(t, "Summon")) == "function" and type(rawget(t, "RerollTrait")) == "function" end)
+        pcall(function() _nodes = require(RS:WaitForChild("Nodes", 5)) end)
+        if _pd and _actions then break end
         task.wait(1)
     end
+    if not _pd or not _actions then
+        notify("Resume failed — game data missing", 4)
+        prog.inProgress = false; saveProg(prog); return
+    end
 
-    task.wait(1)
-    if prog.mode == "summon" and prog.bannerId and prog.targetUnits and next(prog.targetUnits) then
-        notify("Resuming rollback summon...", 3)
-        task.wait(2)
-        runSummonRollback(prog.bannerId, prog.targetUnits, prog.batchSize or 10)
-    elseif prog.mode == "trait" and prog.traitUid and prog.traitTargets and next(prog.traitTargets) then
-        notify("Resuming rollback trait reroll...", 3)
-        task.wait(2)
-        runTraitRollback(prog.traitUid, prog.traitTargets)
+    task.wait(2)
+    if prog.mode == "summon" and prog.bannerId and prog.targets and next(prog.targets) then
+        notify("Resuming summon...", 3); task.wait(2)
+        runSummon(prog.bannerId, prog.targets, prog.batchSize or 10, prog.cost or 50, prog.currency or "Gem")
+    elseif prog.mode == "trait" and prog.uid and prog.targets and next(prog.targets) then
+        notify("Resuming trait reroll...", 3); task.wait(2)
+        runTrait(prog.uid, prog.targets)
     else
-        prog.inProgress = false; saveProgress(prog)
+        prog.inProgress = false; saveProg(prog)
     end
 end)
