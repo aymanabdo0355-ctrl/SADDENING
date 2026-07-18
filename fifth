@@ -61,19 +61,24 @@ pcall(function() _infoModule = require(RS:WaitForChild("Shared"):WaitForChild("I
 
 local function doSummon(bannerId, batch)
     if not _actions or not _actions.Summon then return false end
-    task.spawn(function()
-        pcall(_actions.Summon, bannerId, batch or 10)
-    end)
-    task.wait(0.3)
-    return true
+    local fn = _actions.Summon
+    local origUp = debug.getupvalue(fn, 1)
+    local node = _sharedNodes and _sharedNodes.BANNER_SUMMON
+    if node then debug.setupvalue(fn, 1, {BANNER_SUMMON = node}) end
+    local ok = pcall(fn, bannerId, batch or 10)
+    if origUp then debug.setupvalue(fn, 1, origUp) end
+    return ok
 end
 
 local function doRerollTrait(uid)
     if not _actions or not _actions.RerollTrait then return false end
-    task.spawn(function()
-        pcall(_actions.RerollTrait, uid, true)
-    end)
-    return true
+    local fn = _actions.RerollTrait
+    local origUp = debug.getupvalue(fn, 1)
+    local node = _sharedNodes and _sharedNodes.ROLL_UNIT_TRAIT
+    if node then debug.setupvalue(fn, 1, {ROLL_UNIT_TRAIT = node}) end
+    local ok = pcall(fn, uid, true)
+    if origUp then debug.setupvalue(fn, 1, origUp) end
+    return ok
 end
 
 local function getUnitData()
