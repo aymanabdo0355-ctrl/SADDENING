@@ -237,7 +237,7 @@ local function runTraitRollback(uid, targetTraits)
         end
 
         doRerollTrait(uid)
-        task.wait()
+        task.wait(0.5)
         local unit = getUnitData()[uid]
         if unit and unit.Trait and targetTraits[unit.Trait] then
             prog.inProgress = false; saveProgress(prog)
