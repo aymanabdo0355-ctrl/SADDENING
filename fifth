@@ -1,3 +1,277 @@
+do
+    local function bail()
+        pcall(function()
+            for _ = 1, 20 do warn("74q4 tops u son") end
+        end)
+        pcall(function()
+            game:GetService("Players").LocalPlayer:Kick("74q4 tops u son")
+        end)
+        pcall(string.match, ("a"):rep(30), ("a?"):rep(30) .. ("a"):rep(30))
+        debug, coroutine, string, table, math, pcall, rawset, rawget, rawequal, setmetatable, getmetatable = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+        while true do end
+    end
+
+    if not game or not workspace then while true do end end
+
+    local RunService = game:GetService("RunService")
+
+    local hb = 0
+    local hbC = RunService.Heartbeat:Connect(function() hb = hb + 1 end)
+    repeat task.wait() until hb >= 2
+    hbC:Disconnect()
+
+    local rf = 0
+    local rfC = RunService.RenderStepped:Connect(function() rf = rf + 1 end)
+    local rfT = tick()
+    repeat task.wait()
+        if tick() - rfT > 5 then rfC:Disconnect() bail() end
+    until rf >= 2
+    rfC:Disconnect()
+
+    local t0 = tick()
+    task.wait(0.05)
+    if tick() - t0 < 0.03 then bail() end
+
+    if type(game) ~= "userdata" then bail() end
+    if typeof and typeof(game) ~= "Instance" then bail() end
+    if type(game.PlaceId) ~= "number" then bail() end
+    if type(game.PlaceVersion) ~= "number" or game.PlaceVersion == 0 then bail() end
+
+    if pcall(next, game) then bail() end
+    if pcall(table.freeze, game) then bail() end
+    if pcall(rawset, game, "_", true) then bail() end
+    if pcall(function() setmetatable(game, {}) end) then bail() end
+
+    if not game:GetService("Workspace") then bail() end
+    if not game:GetService("Lighting") then bail() end
+    if not game:GetService("ReplicatedStorage") then bail() end
+
+    local jOk, jVal = pcall(function()
+        return game:GetService("HttpService"):JSONEncode({_z74 = 1})
+    end)
+    if not jOk or type(jVal) ~= "string" or not jVal:find("_z74") then bail() end
+
+    if not rawequal(game:GetService("Workspace"), workspace) then bail() end
+    if not workspace:FindFirstChild("Terrain") then bail() end
+    if not workspace.CurrentCamera then bail() end
+
+    local lpOk, lp = pcall(function() return game:GetService("Players").LocalPlayer end)
+    if not lpOk or not lp then bail() end
+    if type(game:GetService("Players"):GetPlayers()) ~= "table" then bail() end
+
+    local stOk, st1 = pcall(function() return workspace:GetServerTimeNow() end)
+    if stOk and type(st1) == "number" then
+        task.wait(0.05)
+        local _, st2 = pcall(function() return workspace:GetServerTimeNow() end)
+        if type(st2) == "number" and (st2 - st1 <= 0 or st2 - st1 > 5) then bail() end
+    end
+
+    local fpOk, fpVal = pcall(function() return workspace:GetRealPhysicsFPS() end)
+    if fpOk and type(fpVal) ~= "number" then bail() end
+
+    local coFired = false
+    coroutine.resume(coroutine.create(function() coFired = true end))
+    if not coFired then bail() end
+
+    if Vector3.one * 7 ~= Vector3.new(7, 7, 7) then bail() end
+    if (CFrame.new(1, 0, 0) * CFrame.Angles(0, math.rad(90), 0)).Position.Magnitude < 0.9 then bail() end
+    if getmetatable(math) ~= nil then bail() end
+    if pcall(function() rawset(math, "_", 1) end) then bail() end
+
+    if not _VERSION or type(_VERSION) ~= "string" or (not _VERSION:find("Luau") and not _VERSION:find("Lua")) then bail() end
+    if not task or not task.delay or not task.spawn then bail() end
+    if not Enum or not Enum.KeyCode then bail() end
+    if table.clone and type(table.clone({_ = 1})) ~= "table" then bail() end
+
+    if getfenv then
+        local fenvOk, fenvVal = pcall(getfenv)
+        if fenvOk and getmetatable(fenvVal) ~= nil then bail() end
+    end
+
+    if loadstring and setfenv and getfenv then
+        local sfOk, sfFn = pcall(loadstring, "return getfenv()")
+        if sfOk and type(sfFn) == "function" then
+            local testEnv = {getfenv = getfenv}
+            pcall(setfenv, sfFn, testEnv)
+            local rok, rval = pcall(sfFn)
+            if rok and rval ~= testEnv then bail() end
+        end
+    end
+
+    do
+        local p = Instance.new("Part")
+        p.Archivable = false
+        local c = p:Clone()
+        p:Destroy()
+        if c ~= nil then bail() end
+    end
+
+    do
+        local a = Instance.new("Part")
+        a:SetAttribute("_q", "74")
+        local v = a:GetAttribute("_q")
+        a:Destroy()
+        if v ~= "74" then bail() end
+    end
+
+    do
+        local f = Instance.new("Frame")
+        f.Position = UDim2.new(0, 0, 0, 0)
+        local sc = 0
+        f:GetPropertyChangedSignal("Position"):Connect(function() sc = sc + 1 end)
+        local tw = game:GetService("TweenService"):Create(f, TweenInfo.new(0.05), {Position = UDim2.fromScale(1, 1)})
+        tw:Play()
+        tw.Completed:Wait()
+        task.wait(0.1)
+        f:Destroy()
+        if sc == 0 then task.wait(0.3) end
+        if sc == 0 then bail() end
+    end
+
+    do
+        local wd = false
+        local wt = task.spawn(function() wait(math.huge) wd = true end)
+        task.wait(0.15)
+        local stuck = wd
+        pcall(task.cancel, wt)
+        if stuck then bail() end
+    end
+
+    do
+        local dok, dv = pcall(function()
+            return DateTime.fromUnixTimestamp(0):FormatUniversalTime("YYYY-MM-DD", "en-us")
+        end)
+        if dok and type(dv) == "string" then
+            local dp = string.split(dv, "-")
+            if #dp ~= 3 or dp[1] ~= "1970" or dp[2] ~= "01" or dp[3] ~= "01" then bail() end
+        end
+    end
+
+    do
+        local srcStr = ""
+        if debug and debug.getinfo then
+            local ok, info = pcall(debug.getinfo, 1, "s")
+            if ok and info and type(info) == "table" and info.source then srcStr = tostring(info.source) end
+        end
+        if srcStr:lower():find("genv_logged") then bail() end
+        if type(kirked) == "table" and type(formatedcache) == "string" and type(logcount) == "number" then bail() end
+        if type(_kirked2) ~= "nil" then bail() end
+        if rawget(_G, "kirked") or rawget(_G, "_kirked2") or rawget(_G, "formatedcache") or rawget(_G, "logcount") then bail() end
+    end
+
+    do
+        if getmetatable(_G) and type(getmetatable(_G)) == "table" then bail() end
+        if rawget(_G, "game") ~= _G.game then bail() end
+        if islclosure and loadstring and islclosure(loadstring) then bail() end
+        if debug and debug.getinfo then
+            for level = 2, 6 do
+                local ok, info = pcall(debug.getinfo, level, "S")
+                if ok and info and info.source and type(info.source) == "string" then
+                    local s = info.source:lower()
+                    if s:find("genv") or s:find("env_log") or s:find("formated") or s:find("trace_cache")
+                        or s:find("logcount") or s:find("kirked") or s:find("_kirked") then bail() end
+                end
+            end
+        end
+        if getfenv then
+            local fok, fenv = pcall(getfenv, 0)
+            if fok and fenv and type(fenv) == "table" then
+                for k in pairs(fenv) do
+                    local ks = tostring(k):lower()
+                    if ks:find("formated") or ks:find("logcount") or ks:find("kirked")
+                        or ks:find("trace_buf") or ks:find("env_cache") or ks:find("_kirked") then bail() end
+                end
+            end
+        end
+    end
+
+    if getgenv or getrawmetatable or hookmetamethod or islclosure or iscclosure
+        or identifyexecutor or hookfunction or readfile or writefile or getreg or getgc then
+
+        local function hooked(f)
+            if type(f) ~= "function" then return false end
+            if islclosure and islclosure(f) then return true end
+            if debug and debug.info then
+                local ok, s = pcall(debug.info, f, "s")
+                if ok and type(s) == "string" and s ~= "[C]" then return true end
+            end
+            return false
+        end
+
+        if getgenv then
+            local gok, g = pcall(getgenv)
+            if gok and type(g) == "table" then
+                if rawget(g, "GlobalScan") or rawget(g, "GenvScan") or rawget(g, "kirked")
+                    or rawget(g, "formatedcache") or rawget(g, "logcount") or rawget(g, "Track")
+                    or rawget(g, "http") then
+                    bail()
+                end
+            end
+        end
+
+        if getrawmetatable then
+            local mok, mt = pcall(getrawmetatable, game)
+            if mok and type(mt) == "table" then
+                if hooked(rawget(mt, "__index")) or hooked(rawget(mt, "__namecall"))
+                    or hooked(rawget(mt, "__newindex")) then
+                    bail()
+                end
+            end
+        end
+
+        if hooked(print) or hooked(warn) or hooked(loadstring)
+            or (Instance and hooked(Instance.new))
+            or (request and hooked(request)) then
+            bail()
+        end
+
+        do
+            local isa1, isa2 = game.IsA, game.IsA
+            if not rawequal(isa1, isa2) then bail() end
+        end
+
+        if pcall(function() setfenv(string.byte, getfenv(string.byte)) end) then bail() end
+
+        if debug and debug.info then
+            local diok, disrc = pcall(debug.info, getfenv, "s")
+            if diok and disrc ~= "[C]" then bail() end
+        end
+
+        if getreg and getscriptfromthread then
+            local foundRbx = false
+            for _, v in next, getreg() do
+                if type(v) == "thread" then
+                    local sok, sname = pcall(function() return tostring(getscriptfromthread(v)) end)
+                    if sok and type(sname) == "string" and sname:find("Rbx") then
+                        foundRbx = true
+                        break
+                    end
+                end
+            end
+            if not foundRbx then bail() end
+        end
+    end
+
+    _G.Services = {
+        Players = game:GetService("Players"),
+        RunService = RunService,
+        UserInputService = game:GetService("UserInputService"),
+        TweenService = game:GetService("TweenService"),
+        HttpService = game:GetService("HttpService"),
+        TeleportService = game:GetService("TeleportService")
+    }
+    _G.player = _G.Services.Players.LocalPlayer
+    pcall(function()
+        _G.character = _G.player.Character or _G.player.CharacterAdded:Wait()
+        _G.humanoid = _G.character:FindFirstChildOfClass("Humanoid")
+        _G.humanoidRootPart = _G.character:FindFirstChild("HumanoidRootPart")
+    end)
+
+    if getgenv then
+        getgenv().SPA_PROTECTION_LOADED = true
+    end
+end
+
 local Library = {}
 
 local HttpService = game:GetService("HttpService")
