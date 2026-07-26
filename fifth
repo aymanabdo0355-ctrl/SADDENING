@@ -1912,13 +1912,15 @@ function Groupbox:AddDropdown(Flag, Options)
             ClosePopup()
         end)
 
+        local ItemCount = #Dropdown.Values
+        local PopupHeight = math.min(ItemCount * 24 + 12 + (ItemCount >= 8 and 30 or 0), 220)
         Popup = Create("ScrollingFrame", {
             Name = "OpenDropdown",
             Parent = self.Window.Screen,
             Active = true,
             BorderSizePixel = 0,
             BackgroundColor3 = Theme.ElementBackground,
-            Size = UDim2.new(0, Control.AbsoluteSize.X, 0, math.min(#Dropdown.Values * 24 + 12 + (#Dropdown.Values >= 8 and 30 or 0), 220)),
+            Size = UDim2.new(0, Control.AbsoluteSize.X, 0, PopupHeight),
             Position = UDim2.fromOffset(
                 Control.AbsolutePosition.X + Settings.DropdownMenuOffset.X,
                 Control.AbsolutePosition.Y + Control.AbsoluteSize.Y + Settings.DropdownMenuOffset.Y
@@ -1935,7 +1937,7 @@ function Groupbox:AddDropdown(Flag, Options)
         Create("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), Parent = Popup })
 
         local SearchBox
-        if #Dropdown.Values >= 8 then
+        if ItemCount >= 8 then
             local SearchHolder = Create("Frame", {
                 Name = "SearchHolder", Parent = Popup, LayoutOrder = 0,
                 BorderSizePixel = 0, BackgroundTransparency = 1,
